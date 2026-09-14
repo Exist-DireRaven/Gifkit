@@ -1,0 +1,26 @@
+{
+ "case": "mimo_v1",
+ "builder": "make_gif.py",
+ "comment": "v1: 4x4 sheet of 16 independent poses, reading order. Paths are relative to this file.",
+ "source": "../mimo.png",
+ "boxes_file": "../_boxes.json",
+ "output_stem": "mimo_loop",
+ "grid": [
+  4,
+  4
+ ],
+ "canvas": [
+  352,
+  352
+ ],
+ "baseline": 332,
+ "duration_ms": 200,
+ "alpha_solid": 128,
+ "small_size": [
+  176,
+  176
+ ],
+ "oversize_policy": "clamp",
+ "run_prefix": "v1-",
+ "stabilize": false
+}

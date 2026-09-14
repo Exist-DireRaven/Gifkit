@@ -1,0 +1,16 @@
+{
+  "case": "walker_grid",
+  "builder": "make_gif.py",
+  "comment": "Walker example, grid path: 3x4 sheet of 12 walk poses (not a 4x4 sheet). Paths are relative to this file.",
+  "source": "../examples/walker/walker_sheet.png",
+  "boxes_file": "../examples/walker/boxes.json",
+  "output_stem": "walker",
+  "grid": [4, 3],
+  "canvas": [176, 176],
+  "baseline": 160,
+  "duration_ms": 110,
+  "alpha_solid": 128,
+  "small_size": [88, 88],
+  "oversize_policy": "clamp",
+  "run_prefix": "walker-grid-"
+}

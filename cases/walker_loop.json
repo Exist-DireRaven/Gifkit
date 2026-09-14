@@ -1,0 +1,20 @@
+{
+  "case": "walker_loop",
+  "builder": "v3/build_gifs_v3.py",
+  "comment": "Walker example, tile path: 2 blocks x 8 white-background tiles assembled into one walk loop at 12 fps. Paths are relative to this file. Run build_v3.py alignment first.",
+  "aligned_dir": "../examples/walker/frames_aligned",
+  "frames_per_block": 8,
+  "canvas": [320, 320],
+  "alpha_solid": 128,
+  "fps": 12,
+  "nb": {"1": 3, "2": 3},
+  "sequences": {
+    "walk": {
+      "intro": {"block": 1, "hold": 84, "label": "contact"},
+      "blocks": [1, 2],
+      "block_holds": {}
+    }
+  },
+  "output_stem": "walker",
+  "run_prefix": "walker-loop-"
+}

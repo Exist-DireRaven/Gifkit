@@ -1,0 +1,22 @@
+{
+  "case": "mimo_v2_24fps",
+  "builder": "v2/build_24fps.py",
+  "comment": "v2 24 fps cut: in-between count per transition + keyframe holds, outputs on the 10 ms grid. Paths are relative to this file.",
+  "frames_dir": "../v2/frames_key",
+  "pattern": "key_%02d.png",
+  "count": 16,
+  "canvas": [352, 352],
+  "alpha_solid": 128,
+  "fps": 24,
+  "nb": {"1": 3, "2": 4, "3": 3, "4": 3, "5": 3, "6": 4, "7": 3, "8": 3,
+         "9": 3, "10": 3, "11": 4, "12": 3, "13": 5, "14": 3, "15": 3, "16": 2},
+  "hold": {"1": 300, "2": 60, "3": 50, "4": 60, "5": 110, "6": 70, "7": 170, "8": 120,
+           "9": 220, "10": 70, "11": 70, "12": 60, "13": 50, "14": 180, "15": 140, "16": 300},
+  "outputs": [
+    {"name": "mimo2_24fps.gif", "transparent": false, "scale": 1.0},
+    {"name": "mimo2_24fps_transparent.gif", "transparent": true, "scale": 1.0},
+    {"name": "mimo2_24fps_264.gif", "transparent": false, "scale": 0.75},
+    {"name": "mimo2_24fps_small.gif", "transparent": true, "scale": 0.5}
+  ],
+  "run_prefix": "v2-24fps-"
+}

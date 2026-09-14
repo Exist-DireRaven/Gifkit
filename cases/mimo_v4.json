@@ -1,0 +1,23 @@
+{
+  "case": "mimo_v4",
+  "builder": "v3/build_melee_v4.py",
+  "comment": "v4: optimised melee loop from tiles 57..72 (punch block 8, spin block 9). Paths are relative to this file.",
+  "tiles_dir": "../v3/tiles",
+  "tile_prefix": "pair",
+  "tiles_per_block": 8,
+  "blocks": {"punch": 8, "spin": 9},
+  "canvas": [288, 288],
+  "baseline": 252,
+  "target_height": 196,
+  "upscale_cap": 2.6,
+  "fps": 24,
+  "alpha_solid": 128,
+  "punch_indices": [3, 4, 5, 6],
+  "spin_indices": [1, 2, 3, 4, 5, 6],
+  "bridge_to_spin_index": 1,
+  "holds_ms": {"idle": 300, "punch_full": 190, "spin_end": 220, "idle_loop": 300},
+  "bridge_phases": {"punch_to_spin": [0.34, 0.68], "settle": [0.28, 0.55, 0.78]},
+  "adaptive_iou": 0.75,
+  "oversize_policy": "clamp",
+  "run_prefix": "melee-v4-"
+}

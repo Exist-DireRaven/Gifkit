@@ -1,0 +1,25 @@
+{
+  "case": "mimo_v3",
+  "builder": "v3/build_gifs_v3.py",
+  "comment": "v3: two coherent loops (gun / melee) assembled from 72 aligned GPT frames, 8 frames per block. Paths are relative to this file.",
+  "aligned_dir": "../v3/frames_aligned",
+  "frames_per_block": 8,
+  "canvas": [320, 320],
+  "alpha_solid": 128,
+  "fps": 24,
+  "nb": {"1": 4, "2": 4, "3": 5, "4": 4, "5": 3, "6": 5, "7": 5, "8": 3, "9": 4},
+  "sequences": {
+    "gun": {
+      "intro": {"block": 1, "hold": 140, "label": "key02 step"},
+      "blocks": [1, 2, 3, 4, 5, 6, 7],
+      "block_holds": {"7": 150}
+    },
+    "melee": {
+      "intro": {"block": 8, "hold": 300, "label": "key09 idle"},
+      "blocks": [8, 9],
+      "block_holds": {"8": 150, "9": 220},
+      "settle": {"to_block": 8, "count": 3, "final_hold": 300, "label": "key09 idle (loop)"}
+    }
+  },
+  "run_prefix": "v3-"
+}

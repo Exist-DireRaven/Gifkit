@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.pyc
+
+# Intermediate frames (regenerable by scripts)
+frames/
+v3/frames_aligned/
+v3/seq_gun/
+v3/seq_melee/
+v3/seq_melee_v4/
+v3/tiles/
+v2/_flow_cache/
+
+/GIF/
+
+# Walker example material (regenerate: python examples/walker/make_material.py)
+examples/walker/walker_sheet.png
+examples/walker/boxes.json
+examples/walker/tiles/
+examples/walker/frames_aligned/
+examples/walker/_aligned.npy
+examples/walker/_v3_meta.json
+
+# Mimo imagery: NOT for distribution (decision 2026-09-13). These files stay in
+# the local working tree only and must never be committed or published
+# (see docs/publishing.md). Git history was restarted clean on 2026-09-14 —
+# never force-add these.
+mimo.png
+mimo2.png
+gpt_full64.png
+gpt_pairs72.png
+mimo_loop*.gif
+mimo2_*.gif
+mimo3_*.gif
+mimo4_*.gif
+frames_key/
+frames_tween24/
+key02_11/
+_check_*.png
+_strip24_*.png
+_strip_hard_*.png
+_chart_*.png
+_verify_boxes.png
+_aligned_sheet.png
+
+# Isolated generated runs and test cache
+/runs/
+/v2/runs/
+/v3/runs/
+.pytest_cache/
+.venv-test/
+build/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db

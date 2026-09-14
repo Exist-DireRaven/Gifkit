@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+# Gifkit — the name was confirmed 2026-09-13 (unclaimed on PyPI as of that date;
+# the project is not yet published there).
+name = "gifkit"
+version = "0.1.0"
+description = "Sprite-sheet to animation-GIF toolkit with motion-compensated in-betweens"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = [
+    "numpy",
+    "pillow",
+    "scipy",
+    "scikit-image",
+]
+
+[project.optional-dependencies]
+charts = ["matplotlib"]
+test = ["pytest"]
+
+[project.scripts]
+gifkit = "gifkit.cli:main"
+
+[tool.setuptools]
+packages = ["gifkit"]
