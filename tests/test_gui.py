@@ -1,6 +1,7 @@
 """GUI helper tests: pure logic always runs; Tk instantiation is skipped
 gracefully on headless machines."""
 import json
+import time
 from pathlib import Path
 
 import numpy as np
@@ -130,6 +131,79 @@ def test_boxes_align_with_sprites_when_ink_is_off_centre(tmp_path):
         ys, _xs = np.nonzero(a >= 96)
         heights.append(int(ys.max() - ys.min() + 1))
     assert max(heights) - min(heights) <= 3    # every frame the same size
+
+
+def test_manual_grid_mode_is_respected(tmp_path):
+    """Manual mode (detect_grid=False) must use the typed rows/cols verbatim:
+    no detection override, no extra cells, boxes sliced on the given grid."""
+    sheet = tmp_path / "grid.png"
+    arr = np.full((420, 600, 3), 255, np.uint8)
+    for r in range(2):                      # a sheet whose real grid is 2x3
+        for c in range(3):
+            arr[r * 210 + 10:r * 210 + 200, c * 200 + 10:c * 200 + 190, 0] = 50
+            arr[r * 210 + 10:r * 210 + 200, c * 200 + 10:c * 200 + 190, 2] = 150
+    Image.fromarray(arr, "RGB").save(sheet)
+
+    out = tmp_path / "out"
+    config_path, info = gui.write_own_sheet_case(out, sheet, rows=1, cols=1,
+                                                 duration_ms=100, detect_grid=False)
+    assert info["grid_detected"] is None            # detection did not run
+    cfg = json.loads(config_path.read_text(encoding="utf-8"))
+    assert cfg["grid"] == [1, 1]
+    boxes = json.loads((out / "boxes.json").read_text(encoding="utf-8"))
+    assert set(boxes) == {"0,0"}
+    x0, y0, x1, y1 = boxes["0,0"]
+    assert x0 <= 10 and x1 >= 590 and y0 <= 10 and y1 >= 410  # whole sheet, one cell
+
+
+def test_normalize_height_is_an_explicit_option(tmp_path):
+    """Default keeps original proportions; opting in lands in the case config
+    (and therefore in make_gif's normalize path)."""
+    sheet = tmp_path / "one.png"
+    arr = np.full((220, 240, 3), 255, np.uint8)
+    arr[10:210, 20:220, 0] = 50
+    arr[10:210, 20:220, 2] = 150
+    Image.fromarray(arr, "RGB").save(sheet)
+
+    out = tmp_path / "out_default"
+    config_path, _info = gui.write_own_sheet_case(out, sheet, rows=1, cols=1, duration_ms=100)
+    cfg = json.loads(config_path.read_text(encoding="utf-8"))
+    assert cfg["normalize_height"] is False
+
+    out = tmp_path / "out_on"
+    config_path, _info = gui.write_own_sheet_case(out, sheet, rows=1, cols=1,
+                                                  duration_ms=100, normalize_height=True)
+    cfg = json.loads(config_path.read_text(encoding="utf-8"))
+    assert cfg["normalize_height"] is True
+
+
+def test_prep_and_build_worker_runs_off_thread(tmp_path):
+    """The GUI's full worker (prep + build) works headlessly and reports one
+    done=True — the preprocessing that used to run on the Tk thread is part
+    of the same background job."""
+    import queue as _queue
+    sheet = tmp_path / "worker.png"
+    arr = np.full((220, 480, 3), 255, np.uint8)
+    for c in range(2):
+        arr[10:210, c * 240 + 20:c * 240 + 220, 0] = 50
+        arr[10:210, c * 240 + 20:c * 240 + 220, 2] = 150
+    Image.fromarray(arr, "RGB").save(sheet)
+
+    out = tmp_path / "out"
+    q = _queue.Queue()
+    gui.prep_and_build_in_thread(
+        {"sheet": str(sheet), "out": str(out), "build_dir": str(out / "build"),
+         "rows": 1, "cols": 2, "duration": 100, "detect": True, "normalize": False}, q)
+    deadline = time.time() + 120
+    while time.time() < deadline:
+        kind, *rest = q.get(timeout=30)
+        if kind == "done":
+            assert rest[0] is True, rest[1]
+            break
+    else:
+        pytest.fail("worker never finished")
+    gifs = list((out / "build").glob("*.gif"))
+    assert len(gifs) == 4
 
 
 def test_write_own_sheet_case_and_build(tmp_path):

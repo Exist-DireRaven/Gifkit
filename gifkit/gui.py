@@ -20,7 +20,7 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 import numpy as np
-from PIL import Image, ImageTk
+from PIL import Image, ImageDraw, ImageTk
 
 from .cli import PROJECT_ROOT, cmd_build
 
@@ -235,7 +235,15 @@ def detect_grid_exhaustive(keyed_path, max_rows=12, max_cols=12, min_cell=16,
     return best
 
 
-def write_own_sheet_case(out_dir, sheet_path, rows, cols, duration_ms):
+def write_own_sheet_case(out_dir, sheet_path, rows, cols, duration_ms,
+                         detect_grid=True, normalize_height=False):
+    """Write boxes.json + gui_case.json for one own-sheet build.
+
+    detect_grid=False honours the caller's rows/cols verbatim (GUI "manual"
+    mode); with it on, a successful detection overrides them.  normalize_height
+    defaults off: action sheets legitimately change height (crouch, jump), and
+    rescaling reads as pumping — AI micro-drift is the case for turning it on.
+    """
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     info = {"keyed": False, "canvas": None, "baseline": None, "grid_detected": None}
@@ -245,10 +253,11 @@ def write_own_sheet_case(out_dir, sheet_path, rows, cols, duration_ms):
         key_white_background(src, keyed)
         src = str(keyed)
         info["keyed"] = True
-    detected = detect_grid_exhaustive(src)
-    if detected:
-        rows, cols = detected
-        info["grid_detected"] = detected
+    if detect_grid:
+        detected = detect_grid_exhaustive(src)
+        if detected:
+            rows, cols = detected
+            info["grid_detected"] = detected
     boxes = detect_sheet_boxes(src, rows, cols)
     max_w = max(x1 - x0 for x0, _y0, x1, _y1 in boxes.values()) + 1
     max_h = max(y1 - y0 for _x0, y0, _x1, y1 in boxes.values()) + 1
@@ -269,7 +278,7 @@ def write_own_sheet_case(out_dir, sheet_path, rows, cols, duration_ms):
         "baseline": baseline,
         "duration_ms": duration_ms,
         "alpha_solid": 96,
-        "normalize_height": True,
+        "normalize_height": bool(normalize_height),
         "despeckle": True,
         "stabilize": False,
         "small_size": [max(1, canvas[0] // 2), max(1, canvas[1] // 2)],
@@ -301,6 +310,7 @@ class _LogWriter:
 
 
 def build_in_thread(argv, out_queue):
+    """Build a ready case config in a daemon thread (CLI-style argv)."""
     def worker():
         writer = _LogWriter(out_queue)
         try:
@@ -316,6 +326,97 @@ def build_in_thread(argv, out_queue):
             out_queue.put(("done", False, "%s: %s" % (type(exc).__name__, exc)))
 
     threading.Thread(target=worker, daemon=True).start()
+
+
+def _run_worker(fn, out_queue):
+    def worker():
+        writer = _LogWriter(out_queue)
+        try:
+            with contextlib.redirect_stdout(writer), contextlib.redirect_stderr(writer):
+                fn()
+            writer.flush()
+            out_queue.put(("done", True, ""))
+        except SystemExit as exc:
+            writer.flush()
+            out_queue.put(("done", False, str(exc) or "构建失败"))
+        except Exception as exc:
+            writer.flush()
+            out_queue.put(("done", False, "%s: %s" % (type(exc).__name__, exc)))
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
+def _keyed_for_analysis(path, tag):
+    """Return a path whose background is transparent (keying to a temp file
+    when the source has no alpha)."""
+    if sheet_has_alpha(path):
+        return path
+    keyed = os.path.join(tempfile.gettempdir(), "gifkit_%s_keyed.png" % tag)
+    key_white_background(path, keyed)
+    return keyed
+
+
+def prep_and_build_in_thread(job, out_queue):
+    """Whole own-sheet pipeline off the Tk thread.
+
+    Keying a large sheet and the exhaustive grid scan each take seconds —
+    running them on the main thread froze the window before the build even
+    started.  job keys: sheet, out, build_dir, rows, cols, duration,
+    detect (bool), normalize (bool)."""
+    def fn():
+        out_queue.put(("log", "— 预处理：抠底%s —" %
+                       ("、网格检测" if job["detect"] else "")))
+        config_path, info = write_own_sheet_case(
+            job["out"], job["sheet"], job["rows"], job["cols"], job["duration"],
+            detect_grid=job["detect"], normalize_height=job["normalize"])
+        if info.get("keyed"):
+            out_queue.put(("log", "已自动移除背景（原图不含透明通道）"))
+        if info.get("grid_detected"):
+            out_queue.put(("log", "自动检测到网格：%d 行 × %d 列" % info["grid_detected"]))
+        elif job["detect"]:
+            out_queue.put(("log", "未检测到可靠网格，按设定的 %d 行 × %d 列切割"
+                           % (job["rows"], job["cols"])))
+        else:
+            out_queue.put(("log", "按手动指定的 %d 行 × %d 列切割" % (job["rows"], job["cols"])))
+        out_queue.put(("log", "画布自动适配为 %dx%d，地线 y=%d"
+                       % (*info["canvas"], info["baseline"])))
+        if job["normalize"]:
+            out_queue.put(("log", "已开启统一角色高度（蹲伏/跳跃类动作建议改回保持原始尺寸）"))
+        out_queue.put(("log", "— 构建 —"))
+        cmd_build(["--config", str(config_path), "--out", job["build_dir"]])
+
+    _run_worker(fn, out_queue)
+
+
+def detect_grid_in_thread(path, out_queue):
+    """Best-effort grid detection off the Tk thread; result via ("grid", (r, c))."""
+    def fn():
+        detected = detect_grid_exhaustive(_keyed_for_analysis(path, "pick"))
+        if detected:
+            out_queue.put(("grid", detected))
+
+    def runner():
+        try:
+            fn()
+        except Exception:
+            pass
+
+    threading.Thread(target=runner, daemon=True).start()
+
+
+def preview_boxes_in_thread(path, rows, cols, out_queue):
+    """Compute per-sprite boxes for the cut preview; result via ("preview", ...)."""
+    def fn():
+        boxes = detect_sheet_boxes(_keyed_for_analysis(path, "preview"), rows, cols)
+        out_queue.put(("preview", path, boxes))
+
+    def runner():
+        try:
+            fn()
+        except Exception as exc:
+            out_queue.put(("log", "切割预览失败：%s" % exc))
+
+    threading.Thread(target=runner, daemon=True).start()
 
 
 # ---------------------------------------------------------------- GUI
@@ -345,16 +446,49 @@ class App:
 
         grid = ttk.Frame(page)
         grid.pack(fill="x", pady=4)
+        self.grid_auto = tk.BooleanVar(value=True)
         self.sheet_rows = tk.IntVar(value=4)
         self.sheet_cols = tk.IntVar(value=4)
         self.duration = tk.IntVar(value=120)
+        mode = ttk.Frame(grid)
+        mode.pack(side="left", padx=(0, 14))
+        ttk.Label(mode, text="网格").pack(anchor="w")
+        radio_row = ttk.Frame(mode)
+        radio_row.pack()
+        ttk.Radiobutton(radio_row, text="自动检测", variable=self.grid_auto, value=True,
+                        command=self._grid_mode_changed).pack(side="left")
+        ttk.Radiobutton(radio_row, text="手动指定", variable=self.grid_auto, value=False,
+                        command=self._grid_mode_changed).pack(side="left")
+        self._spinboxes = {}
         for text, var, lo, hi in (("行数", self.sheet_rows, 1, 16),
                                   ("列数", self.sheet_cols, 1, 16),
                                   ("每帧毫秒", self.duration, 20, 2000)):
             box = ttk.Frame(grid)
             box.pack(side="left", padx=(0, 14))
             ttk.Label(box, text=text).pack(anchor="w")
-            ttk.Spinbox(box, from_=lo, to=hi, textvariable=var, width=7).pack()
+            spin = ttk.Spinbox(box, from_=lo, to=hi, textvariable=var, width=7)
+            spin.pack()
+            self._spinboxes[text] = spin
+        self.preview_button = ttk.Button(grid, text="预览切割线",
+                                         command=self.show_cut_preview, state="disabled")
+        self.preview_button.pack(side="left", padx=(0, 4))
+        self._grid_mode_changed()
+
+        height = ttk.Frame(page)
+        height.pack(fill="x", pady=4)
+        self.normalize_height = tk.BooleanVar(value=False)
+        hbox = ttk.Frame(height)
+        hbox.pack(side="left")
+        ttk.Label(hbox, text="各帧高度").pack(anchor="w")
+        hrow = ttk.Frame(hbox)
+        hrow.pack()
+        ttk.Radiobutton(hrow, text="保持原始尺寸", variable=self.normalize_height,
+                        value=False).pack(side="left")
+        ttk.Radiobutton(hrow, text="统一角色高度", variable=self.normalize_height,
+                        value=True).pack(side="left")
+        ttk.Label(height, text="统一高度专为 AI 生成素材的轻微漂移设计，"
+                               "会缩放蹲伏/跳跃等真实的高低动作",
+                  foreground="#888").pack(side="left", padx=8)
 
         buttons = ttk.Frame(page)
         buttons.pack(fill="x", pady=(4, 0))
@@ -409,35 +543,71 @@ class App:
                 item = self.out_queue.get_nowait()
                 if item[0] == "log":
                     self.log_line(item[1])
+                elif item[0] == "grid":
+                    self._on_grid_detected(item[1])
+                elif item[0] == "preview":
+                    self._show_preview(item[1], item[2])
                 elif item[0] == "done":
                     self._build_finished(item[1], item[2])
         except queue.Empty:
             pass
         self.root.after(120, self._poll_log)
 
+    def _on_grid_detected(self, detected):
+        """Detection result arriving from the worker thread: fill the
+        spinners as the auto-mode suggestion (never overrides manual mode's
+        pending values — the user switched modes before this returned)."""
+        self.sheet_rows.set(detected[0])
+        self.sheet_cols.set(detected[1])
+        if self.grid_auto.get():
+            self.log_line("自动检测到网格：%d 行 × %d 列（可点“预览切割线”确认）" % detected)
+
     # ---- actions ---------------------------------------------------------
+    def _grid_mode_changed(self):
+        """Auto mode: the spinners display detection results and stay read-only;
+        manual mode: the user's numbers are used verbatim, never overridden."""
+        for text in ("行数", "列数"):
+            self._spinboxes[text].config(
+                state="disabled" if self.grid_auto.get() else "normal")
+
     def pick_sheet(self):
         path = filedialog.askopenfilename(title="选择 sprite sheet",
                                           filetypes=[("图片", "*.png *.jpg *.jpeg *.bmp"), ("所有文件", "*.*")])
         if not path:
             return
         self.sheet_var.set(path)
-        self._auto_detect_grid(path)
+        self.preview_button.config(state="normal")
+        self.log_line("正在分析背景与网格…")
+        detect_grid_in_thread(path, self.out_queue)
 
-    def _auto_detect_grid(self, path):
-        """Best-effort grid detection on file pick."""
-        try:
-            keyed = path
-            if not sheet_has_alpha(path):
-                keyed = os.path.join(tempfile.gettempdir(), "gifkit_pick_keyed.png")
-                key_white_background(path, keyed)
-            detected = detect_grid_exhaustive(keyed)
-            if detected:
-                self.sheet_rows.set(detected[0])
-                self.sheet_cols.set(detected[1])
-                self.log_line("自动检测到网格：%d 行 × %d 列" % detected)
-        except Exception:
-            pass
+    def show_cut_preview(self):
+        """Open a window with the sheet and the exact cut boxes that would be
+        used (auto mode: the detected grid; manual mode: the typed numbers)."""
+        path = self.sheet_var.get()
+        if not os.path.isfile(path) or self._building:
+            return
+        self.preview_button.config(state="disabled")
+        preview_boxes_in_thread(path, int(self.sheet_rows.get()),
+                                int(self.sheet_cols.get()), self.out_queue)
+
+    def _show_preview(self, sheet_path, boxes):
+        im = Image.open(sheet_path).convert("RGB")
+        scale = min(560 / im.width, 420 / im.height, 1.0)
+        disp = im.resize((max(1, int(im.width * scale)), max(1, int(im.height * scale))),
+                         Image.LANCZOS)
+        draw = ImageDraw.Draw(disp)
+        for x0, y0, x1, y1 in boxes.values():
+            draw.rectangle([x0 * scale, y0 * scale, x1 * scale - 1, y1 * scale - 1],
+                           outline=(224, 32, 32), width=max(1, int(round(2 * scale))))
+        photo = ImageTk.PhotoImage(disp)
+        win = tk.Toplevel(self.root)
+        win.title("切割预览（%d 行 × %d 列）" % (self.sheet_rows.get(), self.sheet_cols.get()))
+        lbl = tk.Label(win, image=photo, bg="#1c1c24")
+        lbl.image = photo
+        lbl.pack(padx=10, pady=10)
+        ttk.Label(win, text="红线即每格切割框；不贴合就换“手动指定”调整行列数",
+                  foreground="#888").pack(pady=(0, 8))
+        self.preview_button.config(state="normal")
 
     def start_own_sheet_build(self):
         sheet = self.sheet_var.get()
@@ -450,36 +620,30 @@ class App:
         out = prepare_output_dir(out)
         build_dir = os.path.join(out, "build")
         os.makedirs(build_dir, exist_ok=True)
-        try:
-            rows, cols = int(self.sheet_rows.get()), int(self.sheet_cols.get())
-            duration = int(self.duration.get())
-            config_path, info = write_own_sheet_case(out, sheet, rows, cols, duration)
-        except Exception as exc:
-            messagebox.showerror("Gifkit", "准备配置失败：%s" % exc)
-            return
-        if info.get("keyed"):
-            self.log_line("已自动移除背景（原图不含透明通道）")
-        if info.get("grid_detected"):
-            self.log_line("自动检测到网格：%d 行 × %d 列" % info["grid_detected"])
-        else:
-            self.log_line("未检测到可靠网格，按设定的 %d 行 × %d 列切割" % (rows, cols))
-        self.log_line("画布自动适配为 %dx%d，地线 y=%d" % (*info["canvas"], info["baseline"]))
-        self._start_build(["--config", str(config_path), "--out", build_dir], build_dir)
+        job = {"sheet": sheet, "out": out, "build_dir": build_dir,
+               "rows": int(self.sheet_rows.get()), "cols": int(self.sheet_cols.get()),
+               "duration": int(self.duration.get()),
+               "detect": bool(self.grid_auto.get()),
+               "normalize": bool(self.normalize_height.get())}
+        self._start_build(job, build_dir)
 
-    def _start_build(self, argv, outdir):
+    def _start_build(self, job, outdir):
         if self._building:
             return
         self._building = True
         self.last_outdir = outdir
         self.sheet_build_button.config(state="disabled")
+        self.preview_button.config(state="disabled")
         self.open_button.config(state="disabled")
         self.trim_button.config(state="disabled")
         self.log_line("— 开始构建 %s —" % time.strftime("%H:%M:%S"))
-        build_in_thread(argv, self.out_queue)
+        prep_and_build_in_thread(job, self.out_queue)
 
     def _build_finished(self, ok, message):
         self._building = False
         self.sheet_build_button.config(state="normal")
+        if os.path.isfile(self.sheet_var.get()):
+            self.preview_button.config(state="normal")
         if ok:
             self.open_button.config(state="normal")
             self.log_line("✓ 构建完成，输出目录：%s" % self.last_outdir)
