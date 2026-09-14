@@ -193,6 +193,10 @@ def test_evaluate_schemes_cli_with_stub(tmp_path, monkeypatch):
 @pytest.mark.parametrize("relative", ENTRY_SCRIPTS)
 def test_entry_scripts_import_without_side_effects(relative, tmp_path, monkeypatch):
     source = (ROOT / relative).read_text(encoding="utf-8-sig")
+    if relative == "v2/make_chart.py":
+        # matplotlib is an optional dev-only dep (not in pyproject, excluded
+        # from the frozen build); the import test runs wherever it's installed
+        pytest.importorskip("matplotlib", reason="make_chart needs optional matplotlib")
     if "import morph" in source:
         monkeypatch.setitem(sys.modules, "morph", make_morph_stub())
     monkeypatch.chdir(tmp_path)

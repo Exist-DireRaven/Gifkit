@@ -23,7 +23,7 @@ def test_pyproject_metadata():
     data = tomllib.loads(PYPROJECT.read_text(encoding="utf-8"))
     project = data["project"]
     assert project["name"] == "gifkit"
-    assert project["version"] == "0.1.0"
+    assert project["version"] == __version__   # keep pyproject in sync with the package
     deps = {d.split("[")[0].lower() for d in project["dependencies"]}
     assert {"numpy", "pillow", "scipy", "scikit-image"} <= deps
     assert project["scripts"]["gifkit"] == "gifkit.cli:main"

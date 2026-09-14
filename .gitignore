@@ -49,8 +49,12 @@ _aligned_sheet.png
 /v3/runs/
 .pytest_cache/
 .venv-test/
+.venv-build/
 build/
 dist/
+
+# Local release artifacts (uploaded to GitHub Releases, not committed)
+/release/
 
 # OS
 .DS_Store
